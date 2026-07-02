@@ -75,6 +75,13 @@ const state = {
   currentKey: null,
   tool: 'pencil',
   zoom: 20,
+  
+  // --- AJOUTE CES LIGNES ICI ---
+  originalUnitsPerEm: 1000,
+  originalAscender: 800,
+  originalDescender: -200,
+  originalNativeSize: 16,
+  // -----------------------------
 
   dragging: false,
   dragStart: null,
@@ -218,8 +225,15 @@ function loadFontIntoProject(font, familyName){
   const nativeSize = detectNativeFontSize(font);
   console.log(`Taille native détectée : ${nativeSize}px`);
 
+  // --- AJOUTE CES LIGNES ICI ---
+  state.originalUnitsPerEm = font.unitsPerEm || 1000;
+  state.originalAscender = font.ascender || 800;
+  state.originalDescender = font.descender || -200;
+  state.originalNativeSize = nativeSize;
+  // -----------------------------
+
   // ON ADAPTE VOTRE GRILLE
-  state.gridH = Math.max(16, nativeSize + 4); 
+  state.gridH = Math.max(16, nativeSize + 4);
   state.gridW = state.gridH; // Grille carrée souvent suffisante
   
   // Calcul de la ligne de base proportionnelle
@@ -900,13 +914,21 @@ function exportAtlasPNG(){
 function exportTTF(){
   if(!state.order.length){ toast('Aucun glyphe à exporter'); return; }
 
-  // --- TTF validité : génération OpenType minimale et cohérente ---
-  // opentype.js attend des structures cohérentes (cmap + métriques).
-  // On force un upem et des métriques cohérentes avec la grille.
-  const scale = 64;
-  const unitsPerEm = state.gridH * scale;
-  const ascender = state.baselineRow * scale;
-  const descender = -(state.gridH - state.baselineRow) * scale;
+  // Restauration exacte des métriques d'origine du fichier importé
+  const unitsPerEm = state.originalUnitsPerEm;
+  const ascender = state.originalAscender;
+  
+  // FIX: On s'assure de force que le descender soit négatif
+  let descender = state.originalDescender;
+  if (descender > 0) {
+    descender = -descender; // Si positif, on l'inverse
+  } else if (descender === 0) {
+    // Si égal à zéro, on calcule une valeur par défaut proportionnelle à la grille
+    descender = -(state.gridH - state.baselineRow) * (unitsPerEm / state.originalNativeSize);
+  }
+  
+  // Le scale dynamique calcule la taille exacte qu'un pixel doit faire en unités vectorielles (UPEM)
+  const scale = unitsPerEm / state.originalNativeSize;
 
   function bitmapToPath(bitmap) {
     const path = new opentype.Path();
@@ -916,26 +938,23 @@ function exportTTF(){
       let xStart = 0;
 
       for (let x = 0; x <= state.gridW; x++) {
-        // On vérifie s'il y a un pixel, et on s'arrête proprement en bout de ligne (x === gridW)
         const hasPixel = x < state.gridW && bitmap[y * state.gridW + x];
 
         if (hasPixel && !inSpan) {
-          // Début d'une suite de pixels noirs
           inSpan = true;
           xStart = x;
         } else if (!hasPixel && inSpan) {
-          // Fin de la suite de pixels -> on dessine le rectangle combiné
           inSpan = false;
           
-          const x0 = xStart * scale;
-          const x1 = x * scale;
+          // On applique le décalage de 1 pixel hérité de rasterizeGlyph (gridStartX = 1)
+          // pour éviter que la lettre ne se décale vers la droite à chaque export
+          const x0 = (xStart - 1) * scale;
+          const x1 = (x - 1) * scale;
 
-          // Coordonnées relatives à la baseline (axe Y inversé en TTF)
           const yy = state.baselineRow - y;
           const y0 = yy * scale;
           const y1 = y0 + scale;
 
-          // Tracé d'un contour unique pour toute la bande de pixels
           path.moveTo(x0, y0);
           path.lineTo(x0, y1);
           path.lineTo(x1, y1);
@@ -944,7 +963,6 @@ function exportTTF(){
         }
       }
     }
-
     return path;
   }
 
@@ -968,7 +986,9 @@ function exportTTF(){
     seen.add(codepoint);
 
     const glyphPath = bitmapToPath(g.bitmap);
-    const advanceWidth = Math.max(1, Math.round(g.advance)) * scale;
+    
+    // On retire également le padding de 1px à la largeur d'avance pour rester synchrone
+    const advanceWidth = Math.max(1, Math.round(g.advance - 1)) * scale;
 
     const glyph = new opentype.Glyph({
       name: "uni" + codepoint.toString(16).toUpperCase().padStart(4,"0"),
@@ -988,7 +1008,6 @@ function exportTTF(){
     ascender,
     descender,
     glyphs,
-    // Force davantage de cohérence OpenType
     copyright: '',
     fontVersion: 1,
     weight: 400,
@@ -996,11 +1015,9 @@ function exportTTF(){
   });
 
   try{
-    // Validation côté navigateur : reparse pour éviter de télécharger un buffer invalide.
     const buffer = font.toArrayBuffer();
     try{
       const parsed = opentype.parse(buffer);
-      // Diagnostic minimal
       console.log('[TTF export] parse OK', {
         familyName: parsed && parsed.names && parsed.names.fontFamily && parsed.names.fontFamily.en,
         numGlyphs: parsed && parsed.glyphs ? parsed.glyphs.length : undefined
