@@ -1,4 +1,4 @@
-import opentype from 'opentype.js';
+import opentype from 'https://cdn.skypack.dev/opentype.js';
 import './style.css';
 
 // ======================= MISE À JOUR UI (FIX) =======================
