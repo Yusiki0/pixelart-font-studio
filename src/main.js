@@ -904,27 +904,47 @@ function exportTTF(){
   // opentype.js attend des structures cohérentes (cmap + métriques).
   // On force un upem et des métriques cohérentes avec la grille.
   const scale = 64;
-  const unitsPerEm = Math.max(256, Math.round(state.gridH * scale));
-  const ascender = Math.max(50, Math.round(state.baselineRow * scale));
-  const descender = -Math.max(0, Math.round((state.gridH - state.baselineRow) * scale));
+  const unitsPerEm = state.gridH * scale;
+  const ascender = state.baselineRow * scale;
+  const descender = -(state.gridH - state.baselineRow) * scale;
 
-  function bitmapToPath(bitmap){
+  function bitmapToPath(bitmap) {
     const path = new opentype.Path();
-    // Dessin par cases pleines (polygones). Ça évite les courbes inutiles.
-    for(let y=0;y<state.gridH;y++){
-      for(let x=0;x<state.gridW;x++){
-        if(!bitmap[y*state.gridW + x]) continue;
-        const x0 = x * scale;
-        const x1 = (x + 1) * scale;
-        const yTop = (state.gridH - y) * scale;
-        const yBottom = (state.gridH - y - 1) * scale;
-        path.moveTo(x0, yTop);
-        path.lineTo(x1, yTop);
-        path.lineTo(x1, yBottom);
-        path.lineTo(x0, yBottom);
-        path.close();
+
+    for (let y = 0; y < state.gridH; y++) {
+      let inSpan = false;
+      let xStart = 0;
+
+      for (let x = 0; x <= state.gridW; x++) {
+        // On vérifie s'il y a un pixel, et on s'arrête proprement en bout de ligne (x === gridW)
+        const hasPixel = x < state.gridW && bitmap[y * state.gridW + x];
+
+        if (hasPixel && !inSpan) {
+          // Début d'une suite de pixels noirs
+          inSpan = true;
+          xStart = x;
+        } else if (!hasPixel && inSpan) {
+          // Fin de la suite de pixels -> on dessine le rectangle combiné
+          inSpan = false;
+          
+          const x0 = xStart * scale;
+          const x1 = x * scale;
+
+          // Coordonnées relatives à la baseline (axe Y inversé en TTF)
+          const yy = state.baselineRow - y;
+          const y0 = yy * scale;
+          const y1 = y0 + scale;
+
+          // Tracé d'un contour unique pour toute la bande de pixels
+          path.moveTo(x0, y0);
+          path.lineTo(x0, y1);
+          path.lineTo(x1, y1);
+          path.lineTo(x1, y0);
+          path.closePath();
+        }
       }
     }
+
     return path;
   }
 
@@ -951,7 +971,7 @@ function exportTTF(){
     const advanceWidth = Math.max(1, Math.round(g.advance)) * scale;
 
     const glyph = new opentype.Glyph({
-      name: (g.char && g.char !== ' ') ? g.char : 'uni' + codepoint.toString(16).toUpperCase(),
+      name: "uni" + codepoint.toString(16).toUpperCase().padStart(4,"0"),
       unicode: codepoint,
       advanceWidth,
       path: glyphPath
