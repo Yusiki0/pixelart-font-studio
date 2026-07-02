@@ -1,4 +1,4 @@
-import opentype from 'https://cdn.skypack.dev/opentype.js';
+import opentype from 'https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.module.min.js';
 import './style.css';
 
 // ======================= MISE À JOUR UI (FIX) =======================
