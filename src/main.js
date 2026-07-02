@@ -40,6 +40,11 @@ const ICONS = {
   'grid-3x3': '<rect x="3" y="3" width="18" height="18" rx="1"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/>'
 };
 
+const LANG_FLAG_SVGS = {
+  fr: '<svg width="18" height="12" viewBox="0 0 18 12" xmlns="http://www.w3.org/2000/svg"><rect width="18" height="12" fill="#0055A4"/><rect width="6" height="12" fill="#EF4135"/><rect x="6" width="6" height="12" fill="#FFFFFF"/></svg>',
+  en: '<svg width="18" height="12" viewBox="0 0 18 12" xmlns="http://www.w3.org/2000/svg"><rect width="18" height="12" fill="#012169"/><path d="M0 0 L18 12 M18 0 L0 12" stroke="#FFF" stroke-width="2"/><path d="M0 0 L18 12 M18 0 L0 12" stroke="#C8102E" stroke-width="1"/><path d="M9 0 L9 12 M0 6 L18 6" stroke="#FFF" stroke-width="2"/><path d="M9 0 L9 12 M0 6 L18 6" stroke="#C8102E" stroke-width="1"/></svg>'
+};
+
 function renderIcons(){
   document.querySelectorAll('[data-lucide]').forEach(el=>{
     const name = el.getAttribute('data-lucide');
@@ -74,6 +79,7 @@ const state = {
   dragging: false,
   dragStart: null,
   dragPreviewBitmap: null,
+  dragPreviewBase: null,
   undoStack: {},
   redoStack: {}
 };
@@ -257,6 +263,7 @@ function loadFontIntoProject(font, familyName){
   renderFontInfo();
   if(state.order.length){
     selectGlyph(state.order[0]);
+    renderPreview();
   }
   toast(`Importé ! Adapté à la taille native : ${nativeSize}px`);
 }
@@ -276,6 +283,7 @@ function newBlankProject(){
   renderGlyphList();
   renderFontInfo();
   selectGlyph(state.order[0]);
+  renderPreview();
   toast("Nouveau projet vierge créé.");
 }
 
@@ -378,9 +386,11 @@ function renderGlyphMeta(){
   $('advRange').addEventListener('input', e=>{
     g.advance = parseInt(e.target.value,10);
     $('advVal').textContent = g.advance;
-    renderEditor(); // renderPreview(); -> commenter si non implémenté
+    renderEditor();
+    renderPreview();
   });
 }
+
 
 // ======================= TOOLS & EVENTS =======================
 function pushUndo(){
@@ -481,27 +491,58 @@ function floodFill(bitmap, x, y, W, H, targetVal, replacementVal){
 
 function drawLine(bitmap, x0, y0, x1, y1, W, H, val){
   let dx = Math.abs(x1 - x0);
+  let dy = Math.abs(y1 - y0);
   let sx = x0 < x1 ? 1 : -1;
-  let dy = -Math.abs(y1 - y0);
   let sy = y0 < y1 ? 1 : -1;
-  let err = dx + dy;
+  let err = dx - dy;
+
   while(true){
     setPixel(bitmap, x0, y0, W, H, val);
     if(x0 === x1 && y0 === y1) break;
-    const e2 = 2 * err;
-    if(e2 >= dy){ err += dy; x0 += sx; }
-    if(e2 <= dx){ err += dx; y0 += sy; }
+    let e2 = 2 * err;
+    if(e2 > -dy){ err -= dy; x0 += sx; }
+    if(e2 < dx){ err += dx; y0 += sy; }
   }
 }
 
 function drawRect(bitmap, x0, y0, x1, y1, W, H, val){
-  const left = Math.min(x0,x1);
-  const right = Math.max(x0,x1);
-  const top = Math.min(y0,y1);
-  const bottom = Math.max(y0,y1);
-  // contour uniquement
-  for(let x=left;x<=right;x++){ setPixel(bitmap,x,top,W,H,val); setPixel(bitmap,x,bottom,W,H,val); }
-  for(let y=top;y<=bottom;y++){ setPixel(bitmap,left,y,W,H,val); setPixel(bitmap,right,y,W,H,val); }
+  const left = Math.min(x0, x1);
+  const right = Math.max(x0, x1);
+  const top = Math.min(y0, y1);
+  const bottom = Math.max(y0, y1);
+  for(let y=top; y<=bottom; y++){
+    for(let x=left; x<=right; x++){
+      setPixel(bitmap, x, y, W, H, val);
+    }
+  }
+}
+
+pixelCanvas.addEventListener('contextmenu', (e)=>{
+  // Évite que le clic droit ouvre le menu navigateur (eraser)
+  e.preventDefault();
+});
+
+function beginEditWithUndoSnapshot(){
+  const g = currentGlyph();
+  if(!g) return null;
+  const key = state.currentKey;
+  if(!key) return null;
+
+  // snapshot AVANT modification (undo)
+  state.undoBefore = new Uint8Array(g.bitmap);
+  return g;
+}
+
+function commitUndoAfterSnapshot(){
+  const g = currentGlyph();
+  const key = state.currentKey;
+  if(!g || !key || !state.undoBefore) return;
+
+  // Met undo sur la bitmap avant
+  state.undoStack[key].push(state.undoBefore);
+  if(state.undoStack[key].length>50) state.undoStack[key].shift();
+  state.redoStack[key] = [];
+  state.undoBefore = null;
 }
 
 pixelCanvas.addEventListener('pointerdown', e=>{
@@ -513,38 +554,43 @@ pixelCanvas.addEventListener('pointerdown', e=>{
   const eraseMode = isRightClick || state.tool==='eraser';
   const drawVal = eraseMode ? 0 : 1;
 
-  // Pencil/Eraser: modifie directement
-  if(state.tool==='pencil' || state.tool==='eraser'){
-    pushUndo();
+  // Pencil/Eraser: modifie directement (1 pixel)
+  if(state.tool==='pencil' || state.tool==='eraser' || isRightClick){
+    beginEditWithUndoSnapshot();
     setPixel(g.bitmap, x, y, state.gridW, state.gridH, drawVal);
+    commitUndoAfterSnapshot();
+    commitEdited();
     state.dragging = true;
     state.dragMode = drawVal;
-    commitEdited();
     state.dragStart = {x,y};
     return;
   }
 
   // Bucket: rempli instantanément
   if(state.tool==='bucket'){
-    pushUndo();
+    beginEditWithUndoSnapshot();
     const targetVal = g.bitmap[y*state.gridW + x];
     floodFill(g.bitmap, x, y, state.gridW, state.gridH, targetVal, drawVal);
+    commitUndoAfterSnapshot();
     commitEdited();
     return;
   }
 
   // Line/Rect: prévisualisation pendant le drag
   if(state.tool==='line' || state.tool==='rect'){
-    pushUndo();
     state.dragging = true;
     state.dragStart = {x,y};
     state.dragMode = drawVal;
-    // crée un snapshot bitmap pour overlay
+
+    // snapshot AVANT (undo) + base preview
+    beginEditWithUndoSnapshot();
+    state.dragPreviewBase = new Uint8Array(g.bitmap);
     state.dragPreviewBitmap = new Uint8Array(g.bitmap);
     renderEditor();
     return;
   }
 });
+
 
 pixelCanvas.addEventListener('pointermove', e=>{
   if(!state.dragging) return;
@@ -560,7 +606,8 @@ pixelCanvas.addEventListener('pointermove', e=>{
   if(state.tool==='line' || state.tool==='rect'){
     if(!state.dragStart) return;
     // preview: on part du snapshot et on applique la forme
-    const preview = state.dragPreviewBitmap ? new Uint8Array(state.dragPreviewBitmap) : new Uint8Array(g.bitmap);
+    const base = state.dragPreviewBase ? state.dragPreviewBase : g.bitmap;
+    const preview = new Uint8Array(base);
     if(state.tool==='line') drawLine(preview, state.dragStart.x, state.dragStart.y, x, y, state.gridW, state.gridH, state.dragMode);
     if(state.tool==='rect') drawRect(preview, state.dragStart.x, state.dragStart.y, x, y, state.gridW, state.gridH, state.dragMode);
     state.dragPreviewBitmap = preview;
@@ -575,15 +622,22 @@ window.addEventListener('pointerup', ()=>{
   state.dragging = false;
 
   // Commit final pour line/rect
-  if((state.tool==='line' || state.tool==='rect') && state.dragPreviewBitmap){
-    g.bitmap.set(state.dragPreviewBitmap);
+  if((state.tool==='line' || state.tool==='rect')){
+    if(state.dragPreviewBitmap && g){
+      g.bitmap.set(state.dragPreviewBitmap);
+    }
     state.dragPreviewBitmap = null;
+    state.dragPreviewBase = null;
+
+    // Undo: snapshot a déjà été capturé au pointerdown
+    commitUndoAfterSnapshot();
   }
 
   commitEdited();
   renderEditor();
   state.dragStart = null;
 });
+
 
 
 document.querySelectorAll('.tool-btn').forEach(btn=>{
@@ -604,6 +658,18 @@ if(zoomRangeEl){
   });
 }
 
+pixelCanvas.addEventListener('wheel', e => {
+  if(!e.ctrlKey) return;
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -1 : 1;
+  const nextZoom = Math.min(40, Math.max(6, state.zoom + delta));
+  if(nextZoom !== state.zoom){
+    state.zoom = nextZoom;
+    if(zoomRangeEl) zoomRangeEl.value = state.zoom;
+    renderEditor();
+  }
+});
+
 
 $('fontFile').addEventListener('change', e=>{
   const file = e.target.files[0]; if(!file) return;
@@ -617,28 +683,590 @@ $('fontFile').addEventListener('change', e=>{
   reader.readAsArrayBuffer(file); e.target.value = '';
 });
 
-function initUI() {
-    renderIcons();
-    newBlankProject();
-    bindUndoRedo();
-    
-    const menus = Array.from(document.querySelectorAll('.menu'));
+$('projectFile').addEventListener('change', e=>{
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try{
+      const payload = JSON.parse(ev.target.result);
+      if(!payload || !payload.glyphs){ throw new Error('Invalid project'); }
 
-    function closeAllMenus(){ menus.forEach(m=> m.classList.remove('open')); }
-    menus.forEach(menu=>{
-      const trigger = menu.querySelector('.menu-trigger');
-      trigger.addEventListener('click', e=>{
-        e.stopPropagation();
-        const wasOpen = menu.classList.contains('open');
-        closeAllMenus();
-        if(!wasOpen) menu.classList.add('open');
+      state.fontName = payload.fontName || state.fontName;
+      state.gridW = Number(payload.gridW) || state.gridW;
+      state.gridH = Number(payload.gridH) || state.gridH;
+      state.baselineRow = Number(payload.baselineRow) || state.baselineRow;
+      state.glyphs = {};
+      state.order = [];
+      state.undoStack = {};
+      state.redoStack = {};
+
+      Object.keys(payload.glyphs).sort((a,b)=>parseInt(a,10)-parseInt(b,10)).forEach(key=>{
+        const item = payload.glyphs[key];
+        const bitmap = new Uint8Array(item.bitmap || []);
+        if(bitmap.length !== state.gridW * state.gridH){
+          const filled = blankBitmap();
+          filled.set(bitmap.subarray(0, Math.min(bitmap.length, filled.length)));
+          state.glyphs[key] = { bitmap: filled, advance: item.advance || state.gridW, char: item.char || charFromCodepoint(parseInt(key,10)), edited: !!item.edited, sourceRasterized: !!item.sourceRasterized };
+        } else {
+          state.glyphs[key] = { bitmap, advance: item.advance || state.gridW, char: item.char || charFromCodepoint(parseInt(key,10)), edited: !!item.edited, sourceRasterized: !!item.sourceRasterized };
+        }
+        state.order.push(key);
+        state.undoStack[key] = [];
+        state.redoStack[key] = [];
       });
-      menu.querySelectorAll('.menu-item').forEach(item=> item.addEventListener('click', closeAllMenus));
+
+      $('gridW').value = state.gridW;
+      $('gridH').value = state.gridH;
+      renderGlyphList();
+      renderFontInfo();
+      if(state.order.length) selectGlyph(state.order[0]);
+      renderPreview();
+      toast('Projet JSON chargé.');
+    }catch(err){
+      console.error(err);
+      toast('Impossible de charger le projet JSON.');
+    }
+  };
+  reader.readAsText(file); e.target.value = '';
+});
+
+// ======================= PREVIEW (texte + couleur) =======================
+const previewTextEl = $('previewText');
+const fgColorEl = $('fgColor');
+const bgColorEl = $('bgColor');
+const previewZoomEl = $('previewZoom');
+const previewGapEl = $('previewGap');
+
+function getPreviewPixelSize(){
+  const base = state.gridH;
+  const z = parseInt(previewZoomEl?.value || '3',10) || 3;
+  return z;
+}
+
+function ensurePreviewCharGlyph(ch){
+  const cp = ch.codePointAt(0);
+  const key = String(cp);
+  if(!state.glyphs[key]){
+    // glyph manquante => on crée vide
+    ensureGlyph(cp, ch);
+  }
+  return state.glyphs[key];
+}
+
+function renderPreview(){
+  if(!previewCanvas) return;
+  const ctx = prevCtx;
+
+  const text = (previewTextEl?.value || '').toString();
+  const fg = fgColorEl?.value || '#0a0a0a';
+  const bg = bgColorEl?.value || '#f4f3f1';
+  const gap = parseInt(previewGapEl?.value || '1',10) || 0;
+  const pixel = getPreviewPixelSize();
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = bg;
+  ctx.fillRect(0,0,previewCanvas.width, previewCanvas.height);
+
+  // Dessin: ancrage vertical basé sur baseline
+  const baseline = Math.round(state.baselineRow * pixel);
+
+  let x = 2;
+  // simple largeur de caractère: advance*pixel + gap
+  for(const ch of text){
+    const g = ensurePreviewCharGlyph(ch);
+
+    // blit bitmap
+    const W = state.gridW;
+    const H = state.gridH;
+    ctx.fillStyle = fg;
+
+    for(let gy=0; gy<H; gy++){
+      for(let gx=0; gx<W; gx++){
+        if(g.bitmap[gy*W+gx]){
+          const px = (x + gx*pixel);
+          const py = (baseline - (state.baselineRow*pixel) + gy*pixel);
+          ctx.fillRect(px, py, pixel, pixel);
+        }
+      }
+    }
+
+    x += (g.advance*pixel) + gap*pixel;
+    if(x > previewCanvas.width - state.gridW*pixel) break;
+  }
+}
+
+function bindPreviewEvents(){
+  if(previewTextEl) previewTextEl.addEventListener('input', renderPreview);
+  if(fgColorEl) fgColorEl.addEventListener('input', renderPreview);
+  if(bgColorEl) bgColorEl.addEventListener('input', renderPreview);
+  if(previewZoomEl) previewZoomEl.addEventListener('input', renderPreview);
+  if(previewGapEl) previewGapEl.addEventListener('input', renderPreview);
+}
+
+// ======================= EXPORTS =======================
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 500);
+}
+
+function exportProjectJSON(){
+  const payload = {
+    version: 1,
+    fontName: state.fontName,
+    gridW: state.gridW,
+    gridH: state.gridH,
+    baselineRow: state.baselineRow,
+    glyphs: {}
+  };
+
+  for(const key of state.order){
+    const g = state.glyphs[key];
+    if(!g) continue;
+    payload.glyphs[key] = {
+      char: g.char,
+      advance: g.advance,
+      bitmap: Array.from(g.bitmap),
+      edited: !!g.edited,
+      sourceRasterized: !!g.sourceRasterized
+    };
+  }
+
+  const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+  downloadBlob(blob, `${state.fontName.replace(/\s+/g,'_') || 'font'}_project.json`);
+}
+
+function exportGlyphPNG(){
+  const g = currentGlyph();
+  if(!g){ toast('Aucun glyphe sélectionné'); return; }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = state.gridW;
+  canvas.height = state.gridH;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  ctx.fillStyle = '#000000';
+  for(let y=0;y<state.gridH;y++){
+    for(let x=0;x<state.gridW;x++){
+      if(g.bitmap[y*state.gridW+x]) ctx.fillRect(x,y,1,1);
+    }
+  }
+
+  canvas.toBlob(b=>{
+    if(b) downloadBlob(b, `glyph_${g.char===' '?'space':g.char}.png`);
+  }, 'image/png');
+}
+
+function exportAtlasPNG(){
+  const cols = Math.ceil(Math.sqrt(state.order.length || 1));
+  const rows = Math.ceil((state.order.length || 1)/cols);
+
+  const tileW = state.gridW;
+  const tileH = state.gridH;
+  const canvas = document.createElement('canvas');
+  canvas.width = cols*tileW;
+  canvas.height = rows*tileH;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = '#000000';
+
+  state.order.forEach((key, i)=>{
+    const g = state.glyphs[key];
+    const cx = (i%cols)*tileW;
+    const cy = Math.floor(i/cols)*tileH;
+    for(let y=0;y<tileH;y++){
+      for(let x=0;x<tileW;x++){
+        if(g.bitmap[y*tileW+x]) ctx.fillRect(cx+x, cy+y, 1,1);
+      }
+    }
+  });
+
+  canvas.toBlob(b=>{
+    if(b) downloadBlob(b, `${state.fontName.replace(/\s+/g,'_')}_atlas.png`);
+  }, 'image/png');
+}
+
+function exportTTF(){
+  if(!state.order.length){ toast('Aucun glyphe à exporter'); return; }
+
+  // --- TTF validité : génération OpenType minimale et cohérente ---
+  // opentype.js attend des structures cohérentes (cmap + métriques).
+  // On force un upem et des métriques cohérentes avec la grille.
+  const scale = 64;
+  const unitsPerEm = Math.max(256, Math.round(state.gridH * scale));
+  const ascender = Math.max(50, Math.round(state.baselineRow * scale));
+  const descender = -Math.max(0, Math.round((state.gridH - state.baselineRow) * scale));
+
+  function bitmapToPath(bitmap){
+    const path = new opentype.Path();
+    // Dessin par cases pleines (polygones). Ça évite les courbes inutiles.
+    for(let y=0;y<state.gridH;y++){
+      for(let x=0;x<state.gridW;x++){
+        if(!bitmap[y*state.gridW + x]) continue;
+        const x0 = x * scale;
+        const x1 = (x + 1) * scale;
+        const yTop = (state.gridH - y) * scale;
+        const yBottom = (state.gridH - y - 1) * scale;
+        path.moveTo(x0, yTop);
+        path.lineTo(x1, yTop);
+        path.lineTo(x1, yBottom);
+        path.lineTo(x0, yBottom);
+        path.close();
+      }
+    }
+    return path;
+  }
+
+  // .notdef : doit être l’index 0
+  const notdef = new opentype.Glyph({
+    name: '.notdef',
+    unicode: 0,
+    advanceWidth: Math.max(1, state.gridW) * scale,
+    path: new opentype.Path()
+  });
+
+  const glyphs = [notdef];
+  const unicodeToGlyphIndex = new Map();
+  const seen = new Set();
+
+  state.order.forEach(key=>{
+    const g = state.glyphs[key];
+    const codepoint = parseInt(key,10);
+    if(!Number.isFinite(codepoint) || codepoint === 0) return;
+    if(seen.has(codepoint)) return;
+    seen.add(codepoint);
+
+    const glyphPath = bitmapToPath(g.bitmap);
+    const advanceWidth = Math.max(1, Math.round(g.advance)) * scale;
+
+    const glyph = new opentype.Glyph({
+      name: (g.char && g.char !== ' ') ? g.char : 'uni' + codepoint.toString(16).toUpperCase(),
+      unicode: codepoint,
+      advanceWidth,
+      path: glyphPath
     });
-    document.addEventListener('click', closeAllMenus);
+
+    unicodeToGlyphIndex.set(codepoint, glyphs.length);
+    glyphs.push(glyph);
+  });
+
+  const font = new opentype.Font({
+    familyName: state.fontName || 'PixelArtFont',
+    styleName: 'Regular',
+    unitsPerEm,
+    ascender,
+    descender,
+    glyphs,
+    // Force davantage de cohérence OpenType
+    copyright: '',
+    fontVersion: 1,
+    weight: 400,
+    width: 5
+  });
+
+  try{
+    // Validation côté navigateur : reparse pour éviter de télécharger un buffer invalide.
+    const buffer = font.toArrayBuffer();
+    try{
+      const parsed = opentype.parse(buffer);
+      // Diagnostic minimal
+      console.log('[TTF export] parse OK', {
+        familyName: parsed && parsed.names && parsed.names.fontFamily && parsed.names.fontFamily.en,
+        numGlyphs: parsed && parsed.glyphs ? parsed.glyphs.length : undefined
+      });
+    }catch(parseErr){
+      console.error('[TTF export] parse FAIL', parseErr);
+      toast('Export .TTF invalide (relecture impossible).');
+      return;
+    }
+
+    const blob = new Blob([buffer], { type: 'font/ttf' });
+    downloadBlob(blob, `${state.fontName.replace(/\s+/g,'_') || 'font'}.ttf`);
+
+  }catch(err){
+    toast('Export .TTF invalide (construction incohérente).');
+    console.error(err);
+  }
+}
+
+function transformCurrentGlyph(transform){
+  const g = currentGlyph();
+  if(!g){ toast('Aucun glyphe sélectionné'); return; }
+  pushUndo();
+  const W = state.gridW;
+  const H = state.gridH;
+  const dst = new Uint8Array(W * H);
+  transform(dst, g.bitmap, W, H);
+  g.bitmap = dst;
+  commitEdited();
+  renderPreview();
+}
+
+function bindEditActions(){
+  const btnMirrorH = $('btnMirrorH');
+  const btnMirrorV = $('btnMirrorV');
+  const btnShiftLeft = $('btnShiftLeft');
+  const btnShiftRight = $('btnShiftRight');
+  const btnShiftUp = $('btnShiftUp');
+  const btnShiftDown = $('btnShiftDown');
+  const btnInvert = $('btnInvert');
+  const btnClear = $('btnClear');
+
+  if(btnMirrorH) btnMirrorH.addEventListener('click', ()=> transformCurrentGlyph((dst, src, W, H)=>{
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++) dst[y*W + (W-1-x)] = src[y*W + x];
+  }));
+
+  if(btnMirrorV) btnMirrorV.addEventListener('click', ()=> transformCurrentGlyph((dst, src, W, H)=>{
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++) dst[(H-1-y)*W + x] = src[y*W + x];
+  }));
+
+  if(btnShiftLeft) btnShiftLeft.addEventListener('click', ()=> transformCurrentGlyph((dst, src, W, H)=>{
+    for(let y=0;y<H;y++){
+      for(let x=0;x<W-1;x++) dst[y*W + x] = src[y*W + x + 1];
+    }
+  }));
+
+  if(btnShiftRight) btnShiftRight.addEventListener('click', ()=> transformCurrentGlyph((dst, src, W, H)=>{
+    for(let y=0;y<H;y++){
+      for(let x=W-1;x>0;x--) dst[y*W + x] = src[y*W + x - 1];
+    }
+  }));
+
+  if(btnShiftUp) btnShiftUp.addEventListener('click', ()=> transformCurrentGlyph((dst, src, W, H)=>{
+    for(let y=0;y<H-1;y++){
+      for(let x=0;x<W;x++) dst[y*W + x] = src[(y+1)*W + x];
+    }
+  }));
+
+  if(btnShiftDown) btnShiftDown.addEventListener('click', ()=> transformCurrentGlyph((dst, src, W, H)=>{
+    for(let y=H-1;y>0;y--){
+      for(let x=0;x<W;x++) dst[y*W + x] = src[(y-1)*W + x];
+    }
+  }));
+
+  if(btnInvert) btnInvert.addEventListener('click', ()=> transformCurrentGlyph((dst, src, W, H)=>{
+    for(let i=0;i<W*H;i++) dst[i] = src[i] ? 0 : 1;
+  }));
+
+  if(btnClear) btnClear.addEventListener('click', ()=>{
+    const g = currentGlyph();
+    if(!g){ toast('Aucun glyphe sélectionné'); return; }
+    pushUndo();
+    g.bitmap = new Uint8Array(state.gridW * state.gridH);
+    commitEdited();
+    renderPreview();
+  });
+
+  document.addEventListener('keydown', e=>{
+    if(e.key !== 'Delete') return;
+    if(!e.target || ['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
+    const g = currentGlyph(); if(!g) return;
+    e.preventDefault();
+    pushUndo();
+    g.bitmap = new Uint8Array(state.gridW * state.gridH);
+    commitEdited();
+    renderPreview();
+  });
+}
+
+function bindExports(){
+  const btnExportProject = $('btnExportProject');
+  const btnExportAtlas = $('btnExportAtlas');
+  const btnExportGlyphPNG = $('btnExportGlyphPNG');
+  const btnExportGlyphPNGMenu = $('btnExportGlyphPNGMenu');
+  const btnExportTTF = $('btnExportTTF');
+
+  if(btnExportProject) btnExportProject.addEventListener('click', exportProjectJSON);
+  if(btnExportAtlas) btnExportAtlas.addEventListener('click', exportAtlasPNG);
+  if(btnExportGlyphPNG) btnExportGlyphPNG.addEventListener('click', exportGlyphPNG);
+  if(btnExportGlyphPNGMenu) btnExportGlyphPNGMenu.addEventListener('click', exportGlyphPNG);
+  if(btnExportTTF) btnExportTTF.addEventListener('click', exportTTF);
+}
+
+// ======================= I18N (FR/EN) =======================
+let uiLang = 'fr';
+const I18N = {
+  fr: {
+    toolLabel: { pencil:'Outil', zoom:'Zoom', grid:'Grille' },
+    file:'Fichier', edit:'Édition', help:'Aide',
+    glyphs:'Glyphes', filterPlaceholder:'Filtrer (lettre, U+XXXX)…',
+    addGlyphPlaceholder:'A', addGlyphBtn:'Ajouter',
+    openFont:'Ouvrir police (.ttf/.otf/.woff)',
+    openProject:'Ouvrir projet (.json)',
+    exportProject:'Exporter projet .json',
+    exportAtlas:'Exporter atlas .png',
+    exportGlyphMenu:'Exporter glyphe .png',
+    exportTTF:'Exporter .TTF (format PSDK)',
+    undo:'Annuler', redo:'Rétablir',
+    mirrorH:'Miroir horizontal', mirrorV:'Miroir vertical',
+    shiftLeft:'Décaler à gauche', shiftRight:'Décaler à droite',
+    shiftUp:'Décaler en haut', shiftDown:'Décaler en bas',
+    invert:'Inverser', clear:'Effacer le glyphe',
+    noFont:'Aucune police chargée.',
+    previewTitle:'Aperçu texte',
+    previewZoom:'Zoom', previewInk:'Encre', previewPaper:'Papier', previewSpacing:'Espacement',
+    helpText:'Éditeur de police bitmap — dessinez pixel par pixel, exportez en projet JSON, atlas PNG ou véritable fichier .TTF utilisable dans vos logiciels.',
+    exportGlyph:'Exporter le glyphe en .png'
+  },
+  en: {
+    toolLabel: { pencil:'Tool', zoom:'Zoom', grid:'Grid' },
+    file:'File', edit:'Edit', help:'Help',
+    glyphs:'Glyphs', filterPlaceholder:'Filter (letter, U+XXXX)…',
+    addGlyphPlaceholder:'A', addGlyphBtn:'Add',
+    openFont:'Open font (.ttf/.otf/.woff)',
+    openProject:'Open project (.json)',
+    exportProject:'Export project .json',
+    exportAtlas:'Export atlas .png',
+    exportGlyphMenu:'Export glyph .png',
+    exportTTF:'Export .TTF (PSDK format)',
+    undo:'Undo', redo:'Redo',
+    mirrorH:'Mirror horizontal', mirrorV:'Mirror vertical',
+    shiftLeft:'Shift left', shiftRight:'Shift right',
+    shiftUp:'Shift up', shiftDown:'Shift down',
+    invert:'Invert', clear:'Clear glyph',
+    noFont:'No font loaded.',
+    previewTitle:'Text preview',
+    previewZoom:'Zoom', previewInk:'Ink', previewPaper:'Paper', previewSpacing:'Spacing',
+    helpText:'Bitmap font editor — draw pixel by pixel, export JSON project, PNG atlas or real .TTF usable in your apps.',
+    exportGlyph:'Export glyph as .png'
+  }
+};
+
+function applyLang(){
+  const t = I18N[uiLang];
+  const menubar = document.getElementById('menubar');
+  if(!menubar) return;
+
+  // menu triggers
+  document.querySelectorAll('.menu[data-menu="fichier"] .menu-trigger').forEach(el=> el.textContent = t.file);
+  document.querySelectorAll('.menu[data-menu="edition"] .menu-trigger').forEach(el=> el.textContent = t.edit);
+  document.querySelectorAll('.menu[data-menu="aide"] .menu-trigger').forEach(el=> el.textContent = t.help);
+
+  // labels in DOM
+  const glyphPanelHead = document.querySelector('.glyph-panel .panel-head');
+  if(glyphPanelHead) glyphPanelHead.childNodes[0].nodeValue = ' ' + t.glyphs;
+
+  const glyphSearch = $('glyphSearch');
+  if(glyphSearch) glyphSearch.setAttribute('placeholder', t.filterPlaceholder);
+
+  const newGlyphChar = $('newGlyphChar');
+  if(newGlyphChar) newGlyphChar.setAttribute('placeholder', t.addGlyphPlaceholder);
+
+  const btnAddGlyph = $('btnAddGlyph');
+  if(btnAddGlyph) btnAddGlyph.textContent = t.addGlyphBtn;
+
+  const btnOpenFont = $('btnOpenFont');
+  if(btnOpenFont) btnOpenFont.querySelector('span').textContent = t.openFont;
+
+  const btnOpenProject = $('btnOpenProject');
+  if(btnOpenProject) btnOpenProject.querySelector('span').textContent = t.openProject;
+
+  const btnExportProject = $('btnExportProject');
+  if(btnExportProject) btnExportProject.textContent = t.exportProject;
+
+  const btnExportAtlas = $('btnExportAtlas');
+  if(btnExportAtlas) btnExportAtlas.textContent = t.exportAtlas;
+
+  const btnExportGlyphPNGMenu = $('btnExportGlyphPNGMenu');
+  if(btnExportGlyphPNGMenu) btnExportGlyphPNGMenu.textContent = t.exportGlyphMenu;
+
+  const btnExportTTF = $('btnExportTTF');
+  if(btnExportTTF) btnExportTTF.textContent = t.exportTTF;
+
+  const btnUndo = $('btnUndo');
+  if(btnUndo) btnUndo.childNodes[1].nodeValue = t.undo;
+
+  const btnRedo = $('btnRedo');
+  if(btnRedo) btnRedo.childNodes[1].nodeValue = t.redo;
+
+  const btnMirrorH = $('btnMirrorH'); if(btnMirrorH) btnMirrorH.textContent = t.mirrorH;
+  const btnMirrorV = $('btnMirrorV'); if(btnMirrorV) btnMirrorV.textContent = t.mirrorV;
+  const btnShiftLeft = $('btnShiftLeft'); if(btnShiftLeft) btnShiftLeft.textContent = t.shiftLeft;
+  const btnShiftRight = $('btnShiftRight'); if(btnShiftRight) btnShiftRight.textContent = t.shiftRight;
+  const btnShiftUp = $('btnShiftUp'); if(btnShiftUp) btnShiftUp.textContent = t.shiftUp;
+  const btnShiftDown = $('btnShiftDown'); if(btnShiftDown) btnShiftDown.textContent = t.shiftDown;
+  const btnInvert = $('btnInvert'); if(btnInvert) btnInvert.textContent = t.invert;
+  const btnClear = $('btnClear'); if(btnClear) btnClear.textContent = t.clear;
+
+  const helpText = $('helpText');
+  if(helpText) helpText.textContent = t.helpText;
+
+  const fontInfoEl = $('fontInfo');
+  if(fontInfoEl) fontInfoEl.textContent = state.loadedFont ? fontInfoEl.textContent : t.noFont;
+
+  // preview control labels (they are hardcoded spans in index.html)
+  const previewControls = document.querySelector('.preview-controls');
+  if(previewControls){
+    const rows = previewControls.querySelectorAll('.row span');
+    if(rows[0]) rows[0].textContent = t.previewZoom;
+    if(rows[1]) rows[1].textContent = t.previewInk;
+    if(rows[2]) rows[2].textContent = t.previewPaper;
+    if(rows[3]) rows[3].textContent = t.previewSpacing;
+  }
+
+  const btnExportGlyphPNG = $('btnExportGlyphPNG');
+  if(btnExportGlyphPNG) btnExportGlyphPNG.innerHTML = `<i data-lucide="image-down"></i>${t.exportGlyph}`;
+
+  renderIcons();
+}
+
+function bindLangToggle(){
+  const btn = $('langPlaceholderBtn');
+  if(!btn) return;
+
+  function setBtnText(){
+    btn.innerHTML = LANG_FLAG_SVGS[uiLang] + '<span>' + (uiLang === 'fr' ? 'Français' : 'English') + '</span>';
+    btn.title = uiLang === 'fr' ? 'Switch to English' : 'Passer en français';
+  }
+
+  setBtnText();
+  btn.addEventListener('click', ()=>{
+    uiLang = uiLang === 'fr' ? 'en' : 'fr';
+    setBtnText();
+    applyLang();
+    renderPreview();
+  });
+}
+
+function initUI() {
+  renderIcons();
+  bindLangToggle();
+  newBlankProject();
+  bindUndoRedo();
+  bindPreviewEvents();
+  bindEditActions();
+  bindExports();
+  renderPreview();
+
+  applyLang();
+
+  const menus = Array.from(document.querySelectorAll('.menu'));
+
+  function closeAllMenus(){ menus.forEach(m=> m.classList.remove('open')); }
+  menus.forEach(menu=>{
+    const trigger = menu.querySelector('.menu-trigger');
+    trigger.addEventListener('click', e=>{
+      e.stopPropagation();
+      const wasOpen = menu.classList.contains('open');
+      closeAllMenus();
+      if(!wasOpen) menu.classList.add('open');
+    });
+    menu.querySelectorAll('.menu-item').forEach(item=> item.addEventListener('click', closeAllMenus));
+  });
+  document.addEventListener('click', closeAllMenus);
 }
 
 document.addEventListener('DOMContentLoaded', initUI);
 
-// NOTE: Le projet est un bundler Vite/ESM. Les fix UI ci-dessus supposent que tous les IDs existent.
 

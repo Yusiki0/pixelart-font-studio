@@ -19,10 +19,10 @@
       <button class="menu-trigger">Fichier</button>
       <div class="menu-dropdown">
         <button class="menu-item" id="btnNewFont"><i data-lucide="file-plus"></i>Nouveau projet</button>
-        <label class="menu-item" for="fontFile"><i data-lucide="folder-open"></i>Ouvrir police (.ttf/.otf/.woff)
+        <label class="menu-item" for="fontFile" id="btnOpenFont"><i data-lucide="folder-open"></i><span>Ouvrir police (.ttf/.otf/.woff)</span>
           <input type="file" id="fontFile" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf">
         </label>
-        <label class="menu-item" for="projectFile"><i data-lucide="file-json"></i>Ouvrir projet (.json)
+        <label class="menu-item" for="projectFile" id="btnOpenProject"><i data-lucide="file-json"></i><span>Ouvrir projet (.json)</span>
           <input type="file" id="projectFile" accept=".json,application/json">
         </label>
         <div class="menu-sep"></div>
@@ -30,8 +30,7 @@
         <button class="menu-item" id="btnExportAtlas"><i data-lucide="image"></i>Exporter atlas .png</button>
         <button class="menu-item" id="btnExportGlyphPNGMenu"><i data-lucide="download"></i>Exporter glyphe .png</button>
         <div class="menu-sep"></div>
-        <button class="menu-item highlight" id="btnExportTTF"><i data-lucide="file-type"></i>Exporter .TTF (format PSDK)</button>
-        <button class="menu-item highlight" id="btnExportOTF"><i data-lucide="file-type-2"></i>Exporter .OTF</button>
+        <button class="menu-item highlight" id="btnExportTTF"><i data-lucide="file-type"></i><span>Exporter .TTF (format PSDK)</span></button>
       </div>
     </div>
 
@@ -56,8 +55,8 @@
     <div class="menu" data-menu="aide">
       <button class="menu-trigger">Aide</button>
       <div class="menu-dropdown">
-        <div class="menu-static">
-          Éditeur de police bitmap — dessinez pixel par pixel, exportez en projet JSON, atlas PNG ou véritable fichier .TTF / .OTF utilisable dans vos logiciels.
+        <div class="menu-static" id="helpText">
+          Éditeur de police bitmap — dessinez pixel par pixel, exportez en projet JSON, atlas PNG ou véritable fichier .TTF utilisable dans vos logiciels.
         </div>
       </div>
     </div>
@@ -120,7 +119,7 @@
     <aside class="inspector-panel">
       <div class="panel-head">Aperçu texte</div>
       <div class="block">
-        <input id="previewText" value="Bonjour 123 !" spellcheck="false">
+        <input id="previewText" value="PSDK best engine!" spellcheck="false">
         <canvas id="previewCanvas" width="276" height="90"></canvas>
         <div class="preview-controls">
           <div class="row"><span>Zoom</span><input type="range" id="previewZoom" min="1" max="10" value="3" style="width:120px;"></div>
