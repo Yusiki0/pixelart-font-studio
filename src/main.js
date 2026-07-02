@@ -315,16 +315,25 @@ function miniPreview(canvas, bitmap, W, H){
 }
 
 function renderGlyphList(){
+  if(!glyphGrid) return;
   glyphGrid.innerHTML = '';
-  glyphCountEl.textContent = state.order.length;
+  if(glyphCountEl) glyphCountEl.textContent = state.order.length;
+
+  const searchEl = $('glyphSearch');
+  const filter = (searchEl ? (searchEl.value||'') : '').trim().toLowerCase();
+
   if(state.order.length===0) return;
-  const filter = ($('glyphSearch').value||'').trim().toLowerCase();
+
   state.order.forEach(key=>{
     const g = state.glyphs[key];
+    if(!g) return;
+
     if(filter){
       const cpHex = 'u+' + parseInt(key,10).toString(16);
-      if(!g.char.toLowerCase().includes(filter) && !cpHex.includes(filter)) return;
+      const charStr = (g.char || '').toString();
+      if(!charStr.toLowerCase().includes(filter) && !cpHex.includes(filter)) return;
     }
+
     const tile = document.createElement('div');
     tile.className = 'glyph-tile' + (key===state.currentKey?' selected':'') + (g.edited?' edited':'');
     const cv = document.createElement('canvas');
@@ -338,6 +347,7 @@ function renderGlyphList(){
     glyphGrid.appendChild(tile);
   });
 }
+
 
 function renderFontInfo(){
   const n = state.order.length;
@@ -1137,6 +1147,7 @@ const I18N = {
   fr: {
     toolLabel: { pencil:'Outil', zoom:'Zoom', grid:'Grille' },
     file:'Fichier', edit:'Édition', help:'Aide',
+    newProject:'Nouveau projet',
     glyphs:'Glyphes', filterPlaceholder:'Filtrer (lettre, U+XXXX)…',
     addGlyphPlaceholder:'A', addGlyphBtn:'Ajouter',
     openFont:'Ouvrir police (.ttf/.otf/.woff)',
@@ -1153,12 +1164,17 @@ const I18N = {
     noFont:'Aucune police chargée.',
     previewTitle:'Aperçu texte',
     previewZoom:'Zoom', previewInk:'Encre', previewPaper:'Papier', previewSpacing:'Espacement',
+    previewInspectorTitleGlyph:'Glyphe courant',
+    previewInspectorTitleFont:'Police',
+    previewEmptyHint:'Aucune police chargée.\n\nOuvrez un fichier .ttf/.otf/.woff pour importer ses glyphes, ou lancez un nouveau projet et ajoutez des caractères un par un ci-dessous.',
     helpText:'Éditeur de police bitmap — dessinez pixel par pixel, exportez en projet JSON, atlas PNG ou véritable fichier .TTF utilisable dans vos logiciels.',
-    exportGlyph:'Exporter le glyphe en .png'
+    exportGlyph:'Exporter le glyphe en .png',
+    exportGlyphCurrent:'Exporter le glyphe en .png'
   },
   en: {
     toolLabel: { pencil:'Tool', zoom:'Zoom', grid:'Grid' },
     file:'File', edit:'Edit', help:'Help',
+    newProject:'New project',
     glyphs:'Glyphs', filterPlaceholder:'Filter (letter, U+XXXX)…',
     addGlyphPlaceholder:'A', addGlyphBtn:'Add',
     openFont:'Open font (.ttf/.otf/.woff)',
@@ -1175,10 +1191,15 @@ const I18N = {
     noFont:'No font loaded.',
     previewTitle:'Text preview',
     previewZoom:'Zoom', previewInk:'Ink', previewPaper:'Paper', previewSpacing:'Spacing',
+    previewInspectorTitleGlyph:'Current glyph',
+    previewInspectorTitleFont:'Font',
+    previewEmptyHint:'No font loaded.\n\nOpen a .ttf/.otf/.woff file to import its glyphs, or start a new project and add characters one by one below.',
     helpText:'Bitmap font editor — draw pixel by pixel, export JSON project, PNG atlas or real .TTF usable in your apps.',
-    exportGlyph:'Export glyph as .png'
+    exportGlyph:'Export glyph as .png',
+    exportGlyphCurrent:'Export glyph as .png'
   }
 };
+
 
 function applyLang(){
   const t = I18N[uiLang];
@@ -1189,6 +1210,10 @@ function applyLang(){
   document.querySelectorAll('.menu[data-menu="fichier"] .menu-trigger').forEach(el=> el.textContent = t.file);
   document.querySelectorAll('.menu[data-menu="edition"] .menu-trigger').forEach(el=> el.textContent = t.edit);
   document.querySelectorAll('.menu[data-menu="aide"] .menu-trigger').forEach(el=> el.textContent = t.help);
+
+  const btnNewFont = $('btnNewFont');
+  if(btnNewFont) btnNewFont.childNodes[1].nodeValue = t.newProject;
+
 
   // labels in DOM
   const glyphPanelHead = document.querySelector('.glyph-panel .panel-head');
@@ -1252,10 +1277,35 @@ function applyLang(){
     if(rows[3]) rows[3].textContent = t.previewSpacing;
   }
 
+  // preview panel titles
+  const inspectorHeads = document.querySelectorAll('.inspector-panel .panel-head');
+  // index.html: 0 => Aperçu texte, 1 => Police, 2 => Glyphe courant
+  if(inspectorHeads && inspectorHeads[0]) inspectorHeads[0].childNodes[0].nodeValue = t.previewTitle;
+  if(inspectorHeads && inspectorHeads[1]) inspectorHeads[1].childNodes[0].nodeValue = t.previewInspectorTitleFont;
+  if(inspectorHeads && inspectorHeads[2]) inspectorHeads[2].childNodes[0].nodeValue = t.previewInspectorTitleGlyph;
+
+  // empty hint in glyph panel
+  const emptyHint = $('emptyHint');
+  if(emptyHint) emptyHint.innerHTML = t.previewEmptyHint.replace(/\n/g,'<br>');
+
+
   const btnExportGlyphPNG = $('btnExportGlyphPNG');
-  if(btnExportGlyphPNG) btnExportGlyphPNG.innerHTML = `<i data-lucide="image-down"></i>${t.exportGlyph}`;
+  if(btnExportGlyphPNG) btnExportGlyphPNG.innerHTML = `<i data-lucide="image-down"></i>${t.exportGlyphCurrent || t.exportGlyph}`;
+
+  // Tools (tooltips)
+  const btnPencil = document.querySelector('.tool-btn[data-tool="pencil"]');
+  if(btnPencil) btnPencil.title = uiLang === 'fr' ? 'Crayon' : 'Pencil';
+  const btnEraser = document.querySelector('.tool-btn[data-tool="eraser"]');
+  if(btnEraser) btnEraser.title = uiLang === 'fr' ? 'Gomme' : 'Eraser';
+  const btnBucket = document.querySelector('.tool-btn[data-tool="bucket"]');
+  if(btnBucket) btnBucket.title = uiLang === 'fr' ? 'Pot de peinture' : 'Paint bucket';
+  const btnLine = document.querySelector('.tool-btn[data-tool="line"]');
+  if(btnLine) btnLine.title = uiLang === 'fr' ? 'Ligne' : 'Line';
+  const btnRect = document.querySelector('.tool-btn[data-tool="rect"]');
+  if(btnRect) btnRect.title = uiLang === 'fr' ? 'Rectangle' : 'Rectangle';
 
   renderIcons();
+
 }
 
 function bindLangToggle(){
@@ -1288,6 +1338,17 @@ function initUI() {
 
   applyLang();
 
+  // Recherche glyphs: re-render à chaque saisie
+  const glyphSearch = $('glyphSearch');
+  if(glyphSearch){
+    glyphSearch.addEventListener('input', ()=>{
+      renderGlyphList();
+      renderFontInfo();
+      // Ne pas forcer un changement de sélection si filtrage
+      // (la sélection peut devenir invisible, c'est acceptable)
+    });
+  }
+
   const menus = Array.from(document.querySelectorAll('.menu'));
 
   function closeAllMenus(){ menus.forEach(m=> m.classList.remove('open')); }
@@ -1303,6 +1364,7 @@ function initUI() {
   });
   document.addEventListener('click', closeAllMenus);
 }
+
 
 document.addEventListener('DOMContentLoaded', initUI);
 
