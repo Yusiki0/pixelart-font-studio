@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PixelArt Font Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div id="app">
+
+  <div class="menubar" id="menubar">
+    <div class="brand"><span class="glyph-mark"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span>PixelArt Font Studio</div>
+
+    <div class="menu" data-menu="fichier">
+      <button class="menu-trigger">Fichier</button>
+      <div class="menu-dropdown">
+        <button class="menu-item" id="btnNewFont"><i data-lucide="file-plus"></i>Nouveau projet</button>
+        <label class="menu-item" for="fontFile"><i data-lucide="folder-open"></i>Ouvrir police (.ttf/.otf/.woff)
+          <input type="file" id="fontFile" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf">
+        </label>
+        <label class="menu-item" for="projectFile"><i data-lucide="file-json"></i>Ouvrir projet (.json)
+          <input type="file" id="projectFile" accept=".json,application/json">
+        </label>
+        <div class="menu-sep"></div>
+        <button class="menu-item" id="btnExportProject"><i data-lucide="save"></i>Exporter projet .json</button>
+        <button class="menu-item" id="btnExportAtlas"><i data-lucide="image"></i>Exporter atlas .png</button>
+        <button class="menu-item" id="btnExportGlyphPNGMenu"><i data-lucide="download"></i>Exporter glyphe .png</button>
+        <div class="menu-sep"></div>
+        <button class="menu-item highlight" id="btnExportTTF"><i data-lucide="file-type"></i>Exporter .TTF (format PSDK)</button>
+        <button class="menu-item highlight" id="btnExportOTF"><i data-lucide="file-type-2"></i>Exporter .OTF</button>
+      </div>
+    </div>
+
+    <div class="menu" data-menu="edition">
+      <button class="menu-trigger">Édition</button>
+      <div class="menu-dropdown">
+        <button class="menu-item" id="btnUndo"><i data-lucide="undo-2"></i>Annuler<span class="kbd">Ctrl+Z</span></button>
+        <button class="menu-item" id="btnRedo"><i data-lucide="redo-2"></i>Rétablir<span class="kbd">Ctrl+Y</span></button>
+        <div class="menu-sep"></div>
+        <button class="menu-item" id="btnMirrorH"><i data-lucide="flip-horizontal"></i>Miroir horizontal</button>
+        <button class="menu-item" id="btnMirrorV"><i data-lucide="flip-vertical"></i>Miroir vertical</button>
+        <button class="menu-item" id="btnShiftLeft"><i data-lucide="arrow-left"></i>Décaler à gauche</button>
+        <button class="menu-item" id="btnShiftRight"><i data-lucide="arrow-right"></i>Décaler à droite</button>
+        <button class="menu-item" id="btnShiftUp"><i data-lucide="arrow-up"></i>Décaler en haut</button>
+        <button class="menu-item" id="btnShiftDown"><i data-lucide="arrow-down"></i>Décaler en bas</button>
+        <div class="menu-sep"></div>
+        <button class="menu-item" id="btnInvert"><i data-lucide="contrast"></i>Inverser</button>
+        <button class="menu-item" id="btnClear"><i data-lucide="trash-2"></i>Effacer le glyphe</button>
+      </div>
+    </div>
+
+    <div class="menu" data-menu="aide">
+      <button class="menu-trigger">Aide</button>
+      <div class="menu-dropdown">
+        <div class="menu-static">
+          Éditeur de police bitmap — dessinez pixel par pixel, exportez en projet JSON, atlas PNG ou véritable fichier .TTF / .OTF utilisable dans vos logiciels.
+        </div>
+      </div>
+    </div>
+
+    <!-- Placeholder bouton en haut à droite du header de sélecteur de langue -->
+    <button id="langPlaceholderBtn" class="lang-placeholder-btn" title="Placeholder">★</button>
+  </div>
+
+
+  <div class="workbench">
+
+    <aside class="glyph-panel">
+      <div class="panel-head">Glyphes <span id="glyphCount">0</span></div>
+      <div class="search-wrap"><i data-lucide="search"></i><input id="glyphSearch" placeholder="Filtrer (lettre, U+XXXX)…"></div>
+      <div id="glyphGrid" class="glyph-grid">
+        <div class="empty-hint" id="emptyHint">
+          Aucune police chargée.<br><br>
+          Ouvrez un fichier .ttf/.otf/.woff pour importer ses glyphes, ou lancez un nouveau projet et ajoutez des caractères un par un ci-dessous.
+        </div>
+      </div>
+      <div class="add-glyph">
+        <input id="newGlyphChar" maxlength="2" placeholder="A">
+        <button id="btnAddGlyph"><i data-lucide="plus"></i>Ajouter</button>
+      </div>
+    </aside>
+
+    <main class="editor-panel">
+      <div class="editor-toolbar">
+        <div class="toolbar-group">
+          <span class="toolbar-label"><i data-lucide="pen-tool"></i>Outil</span>
+          <button class="tool-btn active" data-tool="pencil" title="Crayon"><i data-lucide="pencil"></i></button>
+          <button class="tool-btn" data-tool="eraser" title="Gomme"><i data-lucide="eraser"></i></button>
+          <button class="tool-btn" data-tool="bucket" title="Pot de peinture"><i data-lucide="paint-bucket"></i></button>
+          <button class="tool-btn" data-tool="line" title="Ligne"><i data-lucide="slash"></i></button>
+          <button class="tool-btn" data-tool="rect" title="Rectangle"><i data-lucide="square"></i></button>
+        </div>
+        <div class="toolbar-group">
+          <span class="toolbar-label"><i data-lucide="zoom-in"></i>Zoom</span>
+          <input type="range" id="zoomRange" min="6" max="40" value="20">
+        </div>
+        <div class="sep"></div>
+        <div class="toolbar-group">
+          <span class="toolbar-label"><i data-lucide="grid-3x3"></i>Grille</span>
+          <input type="number" class="num-input" id="gridW" min="4" max="128" value="16">
+          <span>×</span>
+          <input type="number" class="num-input" id="gridH" min="4" max="128" value="16">
+          <button id="btnApplyGrid">Appliquer</button>
+        </div>
+      </div>
+
+      <div class="canvas-wrap">
+        <canvas id="pixelCanvas" width="320" height="320"></canvas>
+      </div>
+
+      <div class="glyph-meta" id="glyphMeta">
+        <span>Aucun glyphe sélectionné</span>
+      </div>
+    </main>
+
+    <aside class="inspector-panel">
+      <div class="panel-head">Aperçu texte</div>
+      <div class="block">
+        <input id="previewText" value="Bonjour 123 !" spellcheck="false">
+        <canvas id="previewCanvas" width="276" height="90"></canvas>
+        <div class="preview-controls">
+          <div class="row"><span>Zoom</span><input type="range" id="previewZoom" min="1" max="10" value="3" style="width:120px;"></div>
+          <div class="row"><span>Encre</span><input type="color" id="fgColor" value="#0a0a0a"></div>
+          <div class="row"><span>Papier</span><input type="color" id="bgColor" value="#f4f3f1"></div>
+          <div class="row"><span>Espacement</span><input type="range" id="previewGap" min="0" max="6" value="1" style="width:120px;"></div>
+        </div>
+      </div>
+
+      <div class="panel-head">Police</div>
+      <div class="block">
+        <div id="fontInfo">Aucune police chargée.</div>
+      </div>
+
+      <div class="panel-head">Glyphe courant</div>
+      <div class="block export-row">
+        <button id="btnExportGlyphPNG"><i data-lucide="image-down"></i>Exporter le glyphe en .png</button>
+      </div>
+    </aside>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
