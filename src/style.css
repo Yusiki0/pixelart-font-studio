@@ -238,4 +238,94 @@
 }
 .lang-placeholder-btn:hover{ border-color:var(--ink-dim); color:var(--ink-dim); }
 
+.ghost-btn{
+  background:none;
+  border:1px solid transparent;
+  color:var(--text-dim);
+  width:34px;
+  height:28px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:var(--radius);
+  cursor:pointer;
+  padding:0;
+}
+.ghost-btn:hover{ border-color:var(--line); background:var(--panel-2); color:var(--ink); }
+
+/* ---------- Fullscreen glyph grid overlay ---------- */
+.full-grid-overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(10,10,10,.86);
+  z-index:80;
+  display:flex;
+  flex-direction:column;
+  padding:12px;
+  gap:10px;
+  opacity:0;
+  pointer-events:none;
+}
+.full-grid-overlay.open{
+  opacity:1;
+  pointer-events:auto;
+}
+.full-grid-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+.full-grid-title{
+  color:var(--ink);
+  font-weight:700;
+  letter-spacing:.02em;
+  font-size:14px;
+}
+.full-grid-search-wrap{
+  position:relative;
+  max-width:520px;
+  width:100%;
+}
+.full-grid-search-wrap svg.lucide,
+.full-grid-search-wrap .lucide{
+  position:absolute;
+  left:10px;
+  top:50%;
+  transform:translateY(-50%);
+  width:13px;
+  height:13px;
+  color:var(--text-dim);
+  pointer-events:none;
+}
+#fullGridSearch{
+  width:100%;
+  background:var(--panel-2);
+  border:1px solid var(--line);
+  color:var(--text);
+  padding:8px 10px 8px 32px;
+  border-radius:var(--radius);
+  font-family:inherit;
+  font-size:12px;
+}
+.full-grid{
+  flex:1;
+  overflow:auto;
+  display:grid;
+  gap:8px;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  align-content:start;
+}
+.full-grid .glyph-tile{
+  border-radius:4px;
+  padding:8px;
+}
+.full-grid .glyph-tile canvas{
+  width:60%;
+  height:60%;
+}
+
+
+
+
 

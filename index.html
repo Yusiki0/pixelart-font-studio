@@ -69,7 +69,12 @@
   <div class="workbench">
 
     <aside class="glyph-panel">
-      <div class="panel-head">Glyphes <span id="glyphCount">0</span></div>
+      <div class="panel-head">
+        <span>Glyphes <span id="glyphCount">0</span></span>
+        <button id="btnFullGrid" type="button" class="ghost-btn" title="Fullscreen preview">
+          <i data-lucide="grid-3x3"></i>
+        </button>
+      </div>
       <div class="search-wrap"><i data-lucide="search"></i><input id="glyphSearch" placeholder="Filtrer (lettre, U+XXXX)…"></div>
       <div id="glyphGrid" class="glyph-grid">
         <div class="empty-hint" id="emptyHint">
@@ -83,10 +88,27 @@
       </div>
     </aside>
 
+    <!-- Overlay plein écran (aperçu de tous les glyphes) -->
+    <div id="fullGridOverlay" class="full-grid-overlay" aria-hidden="true">
+      <div class="full-grid-header">
+        <div class="full-grid-title">Aperçu plein écran</div>
+        <button id="btnCloseFullGrid" type="button" class="ghost-btn" title="Fermer (Esc)">
+          ✕
+        </button>
+      </div>
+      <div class="full-grid-search-wrap">
+        <i data-lucide="search"></i>
+        <input id="fullGridSearch" placeholder="Filtrer (lettre, U+XXXX)…" spellcheck="false">
+      </div>
+      <div id="fullGrid" class="full-grid"></div>
+    </div>
+
+
     <main class="editor-panel">
       <div class="editor-toolbar">
         <div class="toolbar-group">
           <span class="toolbar-label"><i data-lucide="pen-tool"></i>Outil</span>
+
           <button class="tool-btn active" data-tool="pencil" title="Crayon"><i data-lucide="pencil"></i></button>
           <button class="tool-btn" data-tool="eraser" title="Gomme"><i data-lucide="eraser"></i></button>
           <button class="tool-btn" data-tool="bucket" title="Pot de peinture"><i data-lucide="paint-bucket"></i></button>
@@ -99,11 +121,10 @@
         </div>
         <div class="sep"></div>
         <div class="toolbar-group">
-          <span class="toolbar-label"><i data-lucide="grid-3x3"></i>Grille</span>
+          <span class="toolbar-label"><i data-lucide="grid-3x3"></i>Grid</span>
           <input type="number" class="num-input" id="gridW" min="4" max="128" value="16">
           <span>×</span>
           <input type="number" class="num-input" id="gridH" min="4" max="128" value="16">
-          <button id="btnApplyGrid">Appliquer</button>
         </div>
       </div>
 

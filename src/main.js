@@ -76,12 +76,10 @@ const state = {
   tool: 'pencil',
   zoom: 20,
   
-  // --- AJOUTE CES LIGNES ICI ---
   originalUnitsPerEm: 1000,
   originalAscender: 800,
   originalDescender: -200,
   originalNativeSize: 16,
-  // -----------------------------
 
   dragging: false,
   dragStart: null,
@@ -102,6 +100,14 @@ const prevCtx = previewCanvas.getContext('2d');
 const glyphMeta = $('glyphMeta');
 const fontInfo = $('fontInfo');
 const toastEl = $('toast');
+
+// Fullscreen grid overlay
+const fullGridOverlay = $('fullGridOverlay');
+const fullGrid = $('fullGrid');
+const btnCloseFullGrid = $('btnCloseFullGrid');
+const btnFullGrid = $('btnFullGrid');
+const fullGridSearch = $('fullGridSearch');
+
 
 function toast(msg){
   toastEl.textContent = msg;
@@ -128,7 +134,7 @@ function ensureGlyph(cp, charStr){
 
 // ======================= FONT IMPORT ENGINE =======================
 
-// 1. DÉTECTION MAGIQUE : Trouve la taille de pixel exacte (ex: 13)
+// Trouve la taille de pixel exacte (ex: 13)
 function detectNativeFontSize(font) {
   let minWidth = Infinity;
   // On analyse les lettres avec des traits droits pour trouver l'épaisseur de 1 pixel vectoriel
@@ -225,16 +231,13 @@ function loadFontIntoProject(font, familyName){
   const nativeSize = detectNativeFontSize(font);
   console.log(`Taille native détectée : ${nativeSize}px`);
 
-  // --- AJOUTE CES LIGNES ICI ---
   state.originalUnitsPerEm = font.unitsPerEm || 1000;
   state.originalAscender = font.ascender || 800;
   state.originalDescender = font.descender || -200;
   state.originalNativeSize = nativeSize;
-  // -----------------------------
 
-  // ON ADAPTE VOTRE GRILLE
   state.gridH = Math.max(16, nativeSize + 4);
-  state.gridW = state.gridH; // Grille carrée souvent suffisante
+  state.gridW = state.gridH;
   
   // Calcul de la ligne de base proportionnelle
   const scale = nativeSize / (font.unitsPerEm || 1000);
@@ -351,8 +354,9 @@ function renderGlyphList(){
 
 function renderFontInfo(){
   const n = state.order.length;
+  const t = I18N[uiLang];
   fontInfo.innerHTML = "<b>" + escapeHtml(state.fontName) + "</b><br>" +
-    n + " glyphes<br>Grille : " + state.gridW + " × " + state.gridH + " px<br>Ligne de base : " + state.baselineRow;
+    n + " glyphes<br>" + t.grid + " : " + state.gridW + " × " + state.gridH + " px<br>" + t.baseline + " : " + state.baselineRow;
 }
 
 function escapeHtml(s){
@@ -404,9 +408,19 @@ function renderEditor(){
 
 function renderGlyphMeta(){
   const g = currentGlyph();
-  if(!g){ glyphMeta.innerHTML = "<span>Aucun glyphe sélectionné</span>"; return; }
+  const t = I18N[uiLang] || {};
+  if(!g){
+    glyphMeta.innerHTML = uiLang === 'en' ? "<span>No glyph selected</span>" : "<span>Aucun glyphe sélectionné</span>";
+    return;
+  }
   const cp = parseInt(state.currentKey,10);
-  glyphMeta.innerHTML = `<b>${escapeHtml(g.char===' '?'␣':g.char)}</b><span>U+${cp.toString(16).toUpperCase().padStart(4,'0')}</span><span class='advance-row'>Largeur d'avance : <span id='advVal'>${g.advance}</span>px&nbsp;<input type='range' id='advRange' min='1' max='${state.gridW}' value='${g.advance}'></span>`;
+  const baselineLabel = (t.baseline || 'Baseline');
+  const advanceLabel = (t.advanceWidth || 'Advance width');
+
+  glyphMeta.innerHTML = `<b>${escapeHtml(g.char===' '?'␣':g.char)}</b><span>U+${cp.toString(16).toUpperCase().padStart(4,'0')}</span>` +
+    `<span class='baseline-row'>${escapeHtml(baselineLabel)} : ${state.baselineRow}px</span>` +
+    `<span class='advance-row'>${escapeHtml(advanceLabel)} : <span id='advVal'>${g.advance}</span>px&nbsp;<input type='range' id='advRange' min='1' max='${state.gridW}' value='${g.advance}'></span>`;
+
   $('advRange').addEventListener('input', e=>{
     g.advance = parseInt(e.target.value,10);
     $('advVal').textContent = g.advance;
@@ -997,7 +1011,6 @@ function exportTTF(){
 
     const glyphPath = bitmapToPath(g.bitmap);
     
-    // On retire également le padding de 1px à la largeur d'avance pour rester synchrone
     const advanceWidth = Math.max(1, Math.round(g.advance - 1)) * scale;
 
     const glyph = new opentype.Glyph({
@@ -1145,7 +1158,7 @@ function bindExports(){
 let uiLang = 'fr';
 const I18N = {
   fr: {
-    toolLabel: { pencil:'Outil', zoom:'Zoom', grid:'Grille' },
+    toolLabel: { pencil:'Tool', zoom:'Zoom', grid:'Grid' },
     file:'Fichier', edit:'Édition', help:'Aide',
     newProject:'Nouveau projet',
     glyphs:'Glyphes', filterPlaceholder:'Filtrer (lettre, U+XXXX)…',
@@ -1189,6 +1202,17 @@ const I18N = {
     shiftUp:'Shift up', shiftDown:'Shift down',
     invert:'Invert', clear:'Clear glyph',
     noFont:'No font loaded.',
+
+    // Editor labels
+    baseline:'Baseline',
+    advanceWidth:'Advance width',
+    grid:'Grid',
+    tool:'Tool',
+
+    // Fullscreen overlay (requested strings)
+    fullscreenPreviewTitle:'Fullscreen preview / Glyph preview',
+    fullscreenPreviewAlt:'Fullscreen glyph preview',
+
     previewTitle:'Text preview',
     previewZoom:'Zoom', previewInk:'Ink', previewPaper:'Paper', previewSpacing:'Spacing',
     previewInspectorTitleGlyph:'Current glyph',
@@ -1304,6 +1328,24 @@ function applyLang(){
   const btnRect = document.querySelector('.tool-btn[data-tool="rect"]');
   if(btnRect) btnRect.title = uiLang === 'fr' ? 'Rectangle' : 'Rectangle';
 
+  // Fullscreen overlay title
+  // Tools labels + tooltips
+  // (Fix: toolbar labels were not updated by applyLang())
+  const toolLabelEl = document.querySelector('.toolbar-group .toolbar-label');
+  const gridLabelEl = document.querySelector('.toolbar-group:nth-child(3) .toolbar-label');
+
+  const toolLabelText = (t.toolLabel && t.toolLabel.pencil) ? t.toolLabel.tool : null;
+  // Prefer exact keys for the pencil label
+  const pencilLabel = (t.toolLabel && t.toolLabel.pencil) ? t.toolLabel.pencil : null;
+  if(toolLabelEl && pencilLabel) toolLabelEl.textContent = pencilLabel;
+
+  if(gridLabelEl && t.toolLabel && t.toolLabel.grid) gridLabelEl.textContent = t.toolLabel.grid;
+
+  // Fullscreen overlay title
+  const fullTitleEl = document.querySelector('.full-grid-title');
+  const fullscreenTitle = t.fullscreenPreviewTitle || I18N.fr.fullscreenPreviewTitle || 'Fullscreen preview / Glyph preview';
+  if(fullTitleEl) fullTitleEl.textContent = fullscreenTitle;
+
   renderIcons();
 
 }
@@ -1323,6 +1365,79 @@ function bindLangToggle(){
     setBtnText();
     applyLang();
     renderPreview();
+  });
+}
+
+function openFullGrid(){
+  if(!fullGridOverlay || !fullGrid) return;
+  fullGridOverlay.classList.add('open');
+  fullGridOverlay.setAttribute('aria-hidden','false');
+  renderFullGrid();
+  // focus search if present
+  if(fullGridSearch) setTimeout(()=> fullGridSearch.focus(), 0);
+}
+
+function closeFullGrid(){
+  if(!fullGridOverlay) return;
+  fullGridOverlay.classList.remove('open');
+  fullGridOverlay.setAttribute('aria-hidden','true');
+}
+
+function miniPreviewTo(canvas, bitmap, W, H){
+  canvas.width = W; canvas.height = H;
+  const c = canvas.getContext('2d');
+  c.clearRect(0,0,W,H);
+  c.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#FFFFFF';
+  for(let y=0;y<H;y++){
+    for(let x=0;x<W;x++){
+      if(bitmap[y*W+x]) c.fillRect(x,y,1,1);
+    }
+  }
+}
+
+function renderFullGrid(){
+  if(!fullGrid) return;
+  fullGrid.innerHTML = '';
+
+  const searchEl = fullGridSearch;
+  const filter = (searchEl ? (searchEl.value||'') : '').trim().toLowerCase();
+
+  if(state.order.length===0){
+    fullGrid.innerHTML = '<div class="empty-hint">Aucune police chargée.</div>';
+    return;
+  }
+
+  const W = state.gridW;
+  const H = state.gridH;
+
+  state.order.forEach(key=>{
+    const g = state.glyphs[key];
+    if(!g) return;
+
+    if(filter){
+      const cpHex = 'u+' + parseInt(key,10).toString(16);
+      const charStr = (g.char || '').toString();
+      if(!charStr.toLowerCase().includes(filter) && !cpHex.includes(filter)) return;
+    }
+
+    const tile = document.createElement('div');
+    tile.className = 'glyph-tile' + (key===state.currentKey?' selected':'') + (g.edited?' edited':'');
+
+    const cv = document.createElement('canvas');
+    miniPreviewTo(cv, g.bitmap, W, H);
+    tile.appendChild(cv);
+
+    const lbl = document.createElement('div');
+    lbl.className = 'lbl';
+    lbl.textContent = g.char===' ' ? '␣' : g.char;
+    tile.appendChild(lbl);
+
+    tile.addEventListener('click', ()=>{
+      selectGlyph(key);
+      closeFullGrid();
+    });
+
+    fullGrid.appendChild(tile);
   });
 }
 
@@ -1349,6 +1464,28 @@ function initUI() {
     });
   }
 
+  // Fullscreen overlay handlers
+  if(btnFullGrid){
+    btnFullGrid.addEventListener('click', ()=>{
+      openFullGrid();
+    });
+  }
+  if(btnCloseFullGrid){
+    btnCloseFullGrid.addEventListener('click', closeFullGrid);
+  }
+  document.addEventListener('keydown', e=>{
+    if(e.key === 'Escape') closeFullGrid();
+  });
+  if(fullGridSearch){
+    fullGridSearch.addEventListener('input', ()=> renderFullGrid());
+  }
+  if(fullGridOverlay){
+    fullGridOverlay.addEventListener('click', e=>{
+      // close on backdrop click (not on panel content)
+      if(e.target === fullGridOverlay) closeFullGrid();
+    });
+  }
+
   const menus = Array.from(document.querySelectorAll('.menu'));
 
   function closeAllMenus(){ menus.forEach(m=> m.classList.remove('open')); }
@@ -1367,5 +1504,8 @@ function initUI() {
 
 
 document.addEventListener('DOMContentLoaded', initUI);
+
+
+
 
 
